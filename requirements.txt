@@ -1,0 +1,8 @@
+fmi-weather-client
+pandas
+pyarrow
+pyyaml
+google-cloud-bigquery
+google-cloud-bigquery-storage
+confluent-kafka
+streamlit
