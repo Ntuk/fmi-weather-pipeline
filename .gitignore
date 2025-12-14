@@ -1,9 +1,4 @@
-__pycache__/
-*.pyc
-.env
-.env.*
 airflow/logs/
-airflow/plugins/__pycache__/
-.kafka/
-.vscode/
-.DS_Store
+airflow/logs/**
+
+**/__pycache__/
