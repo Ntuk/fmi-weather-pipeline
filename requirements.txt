@@ -1,4 +1,7 @@
 confluent-kafka
+db-dtypes
 fmi-weather-client
 google-cloud-bigquery
+pandas
 pyyaml
+streamlit
