@@ -1,3 +1,4 @@
 confluent-kafka
 fmi-weather-client
+google-cloud-bigquery
 pyyaml
