@@ -11,9 +11,9 @@ services:
       - --smp
       - "1"
       - --memory
-      - 1G
+      - "1G"
       - --reserve-memory
-      - 0M
+      - "0M"
       - --node-id
       - "0"
       - --check=false
@@ -21,5 +21,11 @@ services:
       - PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr
       - PLAINTEXT://localhost:9092
+      - --pandaproxy-addr
+      - 0.0.0.0:8082
+      - --advertise-pandaproxy-addr
+      - localhost:8082
     ports:
       - "9092:9092"
+      - "8082:8082"
+      - "9644:9644"

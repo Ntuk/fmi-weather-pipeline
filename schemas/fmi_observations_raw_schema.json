@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "fmi_observations_raw",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source", "ingested_at", "station_id", "timestamp"],
+  "properties": {
+    "source": { "type": "string", "const": "fmi" },
+    "ingested_at": { "type": "string", "format": "date-time" },
+
+    "station_id": { "type": "string", "pattern": "^[0-9]+$" },
+    "timestamp": { "type": "string", "format": "date-time" },
+
+    "temperature": { "type": ["number", "null"] },
+    "humidity": { "type": ["number", "null"] },
+    "wind_speed": { "type": ["number", "null"] },
+    "pressure": { "type": ["number", "null"] }
+  }
+}
