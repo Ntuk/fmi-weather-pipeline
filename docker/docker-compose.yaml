@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   redpanda:
     image: redpandadata/redpanda:latest
@@ -20,12 +18,18 @@ services:
       - --kafka-addr
       - PLAINTEXT://0.0.0.0:9092
       - --advertise-kafka-addr
-      - PLAINTEXT://localhost:9092
+      - PLAINTEXT://redpanda:9092
       - --pandaproxy-addr
       - 0.0.0.0:8082
       - --advertise-pandaproxy-addr
-      - localhost:8082
+      - redpanda:8082
     ports:
       - "9092:9092"
       - "8082:8082"
       - "9644:9644"
+    networks:
+      - fmi-net
+
+networks:
+  fmi-net:
+    external: true

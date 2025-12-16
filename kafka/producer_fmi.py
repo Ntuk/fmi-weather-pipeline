@@ -1,17 +1,19 @@
 import json
 import math
 import yaml
-from datetime import datetime
-from datetime import timezone
+import os
+from datetime import datetime, timezone
+
 from confluent_kafka import Producer
-from fmi_weather_client import observation_by_station_id
+import fmi_weather_client as fmi
 
 
 CONFIG_PATH = "config/settings.yaml"
-KAFKA_BOOTSTRAP = "localhost:9092"
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 TOPIC = "fmi_observations"
 
 
+# Helpers
 def load_station_ids():
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -21,6 +23,7 @@ def load_station_ids():
 def normalize_value(value):
     if value is None:
         return None
+
     if isinstance(value, dict):
         value = value.get("value")
     elif isinstance(value, (list, tuple)) and len(value) > 0:
@@ -32,6 +35,7 @@ def normalize_value(value):
     return value
 
 
+# Main producer
 def main():
     station_ids = load_station_ids()
 
@@ -48,7 +52,8 @@ def main():
         station_id = str(station_id)
 
         try:
-            observations = observation_by_station_id(station_id)
+            # FMI API call
+            observations = fmi.observation_by_station_id(station_id)
         except Exception as e:
             print(f"[WARN] Failed to fetch station {station_id}: {e}")
             continue
@@ -59,7 +64,11 @@ def main():
                 if isinstance(timestamp, datetime):
                     timestamp = timestamp.isoformat()
 
+                if not timestamp:
+                    continue
+
                 ingested_at = datetime.now(timezone.utc).isoformat()
+
                 record = {
                     "source": "fmi",
                     "ingested_at": ingested_at,
@@ -71,11 +80,11 @@ def main():
                     "pressure": normalize_value(getattr(obs, "pressure", None)),
                 }
 
-                # Skip junk rows
-                if not record["timestamp"]:
-                    continue
-
-                if all(record[k] is None for k in ("temperature", "humidity", "wind_speed", "pressure")):
+                # Skip empty measurements
+                if all(
+                    record[k] is None
+                    for k in ("temperature", "humidity", "wind_speed", "pressure")
+                ):
                     continue
 
                 key = f"{record['station_id']}:{record['timestamp']}"

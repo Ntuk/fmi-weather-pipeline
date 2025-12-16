@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.bash import BashOperator
@@ -7,12 +6,11 @@ from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobO
 
 PROJECT_ID = "oamk-476515"
 LOCATION = "EU"
-
-RAW_TABLE = f"{PROJECT_ID}.raw.fmi_observations"
 CURATED_VIEW = f"{PROJECT_ID}.curated.fmi_observations_latest"
 PROCESSED_TABLE = f"{PROJECT_ID}.processed.fmi_observations_daily"
-
 STATIONS = ["100971", "101939", "101632", "101786", "101311"]
+REPO_ROOT = "/opt/airflow/repo"
+PYTHON_BIN = "/home/airflow/.local/bin/python"
 
 default_args = {
     "owner": "student",
@@ -29,33 +27,40 @@ with DAG(
     max_active_runs=1,
     tags=["demo", "fmi", "bigquery"],
 ) as dag:
+    common_env = {
+        "GOOGLE_CLOUD_PROJECT": PROJECT_ID,
+        "PYTHONPATH": REPO_ROOT,
+        "KAFKA_BOOTSTRAP_SERVERS": "redpanda:9092",
+        "GOOGLE_APPLICATION_CREDENTIALS": "/home/airflow/.config/gcloud/application_default_credentials.json",
+    }
 
-    # 1) Producer (Kafka)
+    # 1) Producer (FMI -> Kafka)
     run_producer = BashOperator(
         task_id="run_producer",
         bash_command=(
-            "cd /opt/airflow/repo && timeout 120s python -u kafka/producer_fmi.py"
+            "set -euo pipefail; "
+            f"cd {REPO_ROOT}; "
+            f"{PYTHON_BIN} -u kafka/producer_fmi.py"
         ),
-        env={
-            "GOOGLE_CLOUD_PROJECT": PROJECT_ID,
-        },
+        env=common_env,
     )
 
-    # 2) Consumer (Kafka -> BigQuery raw)
+    # 2) Consumer (Kafka -> BigQuery raw). Exits automatically after idle period
     run_consumer = BashOperator(
         task_id="run_consumer_to_bigquery",
         bash_command=(
-            "cd /opt/airflow/repo && timeout 120s python -u kafka/consumer_to_bigquery.py"
+            "set -euo pipefail; "
+            f"cd {REPO_ROOT}; "
+            f"{PYTHON_BIN} -u kafka/consumer_to_bigquery.py"
         ),
-        env={
-            "GOOGLE_CLOUD_PROJECT": PROJECT_ID,
-        },
+        env=common_env,
     )
 
-    # 3) Processed daily (rebuild ds partition from curated latest).
+    # 3) Processed daily (rebuild ds partition from curated latest)
     build_processed_daily = BigQueryInsertJobOperator(
         task_id="build_processed_daily",
         location=LOCATION,
+        gcp_conn_id="google_cloud_default",
         configuration={
             "query": {
                 "query": f"""
@@ -119,6 +124,7 @@ with DAG(
         t = BigQueryInsertJobOperator(
             task_id=f"update_longterm_station_{station_id}",
             location=LOCATION,
+            gcp_conn_id="google_cloud_default",
             configuration={
                 "query": {
                     "query": f"""

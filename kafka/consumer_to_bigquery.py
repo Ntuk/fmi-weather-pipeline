@@ -1,22 +1,19 @@
+import os
 import json
-from datetime import datetime
 from confluent_kafka import Consumer
 from google.cloud import bigquery
 
 PROJECT_ID = "oamk-476515"
 DATASET = "raw"
 TABLE = "fmi_observations"
-
-KAFKA_BOOTSTRAP = "localhost:9092"
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 TOPIC = "fmi_observations"
 GROUP_ID = "bq_raw_loader"
+BATCH_SIZE = 100
+IDLE_POLLS_BEFORE_EXIT = 10
 
 
 def to_bq_row(record: dict) -> dict:
-    """
-    Convert the Kafka JSON record to a BigQuery row.
-    BigQuery accepts ISO8601 strings for TIMESTAMP fields.
-    """
     return {
         "source": record["source"],
         "ingested_at": record["ingested_at"],
@@ -29,7 +26,22 @@ def to_bq_row(record: dict) -> dict:
     }
 
 
-def main():
+def flush_batch(client: bigquery.Client, table_id: str, consumer: Consumer, batch: list) -> None:
+    if not batch:
+        return
+
+    errors = client.insert_rows_json(table_id, batch)
+    if errors:
+        print("[ERROR] BigQuery insert errors:", errors)
+        # Do NOT commit offsets if insert failed
+        return
+
+    consumer.commit()
+    print(f"[OK] Inserted {len(batch)} rows")
+    batch.clear()
+
+
+def main() -> None:
     client = bigquery.Client(project=PROJECT_ID)
     table_id = f"{PROJECT_ID}.{DATASET}.{TABLE}"
 
@@ -44,23 +56,21 @@ def main():
     consumer.subscribe([TOPIC])
 
     print(f"[OK] Consuming from {TOPIC} and inserting into {table_id}")
+    print(f"[OK] Kafka bootstrap: {KAFKA_BOOTSTRAP}")
 
-    batch = []
-    batch_size = 100
+    batch: list[dict] = []
+    idle_polls = 0
 
     try:
-        while True:
+        while idle_polls < IDLE_POLLS_BEFORE_EXIT:
             msg = consumer.poll(1.0)
+
             if msg is None:
-                if batch:
-                    errors = client.insert_rows_json(table_id, batch)
-                    if errors:
-                        print("[ERROR] BigQuery insert errors:", errors)
-                    else:
-                        consumer.commit()
-                        print(f"[OK] Inserted {len(batch)} rows")
-                    batch.clear()
+                idle_polls += 1
+                flush_batch(client, table_id, consumer, batch)
                 continue
+
+            idle_polls = 0
 
             if msg.error():
                 print("[WARN] Kafka message error:", msg.error())
@@ -73,17 +83,12 @@ def main():
                 print("[WARN] Bad JSON message, skipping:", e)
                 continue
 
-            if len(batch) >= batch_size:
-                errors = client.insert_rows_json(table_id, batch)
-                if errors:
-                    print("[ERROR] BigQuery insert errors:", errors)
-                else:
-                    consumer.commit()
-                    print(f"[OK] Inserted {len(batch)} rows")
-                batch.clear()
+            if len(batch) >= BATCH_SIZE:
+                flush_batch(client, table_id, consumer, batch)
 
-    except KeyboardInterrupt:
-        print("\n[OK] Stopping consumer...")
+        # Final flush before exit
+        flush_batch(client, table_id, consumer, batch)
+        print("[OK] No new messages, exiting consumer.")
 
     finally:
         consumer.close()

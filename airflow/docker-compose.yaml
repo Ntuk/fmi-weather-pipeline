@@ -13,6 +13,8 @@ services:
       test: ["CMD", "pg_isready", "-U", "airflow"]
       interval: 5s
       retries: 5
+    networks:
+      - fmi-net
 
   airflow-init:
     image: apache/airflow:2.9.3
@@ -21,12 +23,22 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      AIRFLOW__WEBSERVER__SECRET_KEY: "moo-key"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ""
-      _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-google
+      _PIP_ADDITIONAL_REQUIREMENTS: >
+        apache-airflow-providers-google
+        pyyaml
+        confluent-kafka==2.8.0
+        fmi-weather-client
     command: >
-      bash -c "airflow db migrate &&
-               airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com"
+      bash -c "
+        airflow db migrate &&
+        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+        airflow connections add google_cloud_default
+          --conn-type google_cloud_platform
+          --conn-extra '{\"project\":\"oamk-476515\",\"key_path\":\"/home/airflow/.config/gcloud/application_default_credentials.json\"}' || true
+      "
 
   airflow-webserver:
     image: apache/airflow:2.9.3
@@ -37,16 +49,23 @@ services:
     ports:
       - "8080:8080"
     environment:
+      AIRFLOW__WEBSERVER__SECRET_KEY: "moo-key"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-google
+      _PIP_ADDITIONAL_REQUIREMENTS: >
+        apache-airflow-providers-google
+        pyyaml
+        confluent-kafka==2.8.0
+        fmi-weather-client
       GOOGLE_CLOUD_PROJECT: oamk-476515
     volumes:
       - ./dags:/opt/airflow/dags
       - ../:/opt/airflow/repo
-      - ~/.config/gcloud:/home/airflow/.config/gcloud:ro
+      - ${APPDATA}/gcloud:/home/airflow/.config/gcloud:ro
     command: webserver
+    networks:
+      - fmi-net
 
   airflow-scheduler:
     image: apache/airflow:2.9.3
@@ -55,16 +74,27 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      AIRFLOW__WEBSERVER__SECRET_KEY: "moo-key"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      _PIP_ADDITIONAL_REQUIREMENTS: apache-airflow-providers-google
+      _PIP_ADDITIONAL_REQUIREMENTS: >
+        apache-airflow-providers-google
+        pyyaml
+        confluent-kafka==2.8.0
+        fmi-weather-client
       GOOGLE_CLOUD_PROJECT: oamk-476515
     volumes:
       - ./dags:/opt/airflow/dags
       - ../:/opt/airflow/repo
-      - ~/.config/gcloud:/home/airflow/.config/gcloud:ro
+      - ${APPDATA}/gcloud:/home/airflow/.config/gcloud:ro
     command: scheduler
+    networks:
+      - fmi-net
 
 volumes:
   postgres-db-volume:
+
+networks:
+  fmi-net:
+    external: true
