@@ -26,19 +26,25 @@ services:
       AIRFLOW__WEBSERVER__SECRET_KEY: "moo-key"
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
       AIRFLOW__CORE__FERNET_KEY: ""
+      GOOGLE_CLOUD_PROJECT: oamk-476515
       _PIP_ADDITIONAL_REQUIREMENTS: >
         apache-airflow-providers-google
         pyyaml
         confluent-kafka==2.8.0
         fmi-weather-client
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ../:/opt/airflow/repo
+      - ${APPDATA}/gcloud:/home/airflow/.config/gcloud:ro
     command: >
-      bash -c "
-        airflow db migrate &&
-        airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
-        airflow connections add google_cloud_default
-          --conn-type google_cloud_platform
-          --conn-extra '{\"project\":\"oamk-476515\",\"key_path\":\"/home/airflow/.config/gcloud/application_default_credentials.json\"}' || true
-      "
+      bash -c "airflow db migrate &&
+      airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
+      airflow connections delete google_cloud_default || true &&
+      airflow connections add google_cloud_default --conn-type google_cloud_platform --conn-extra '{\"extra__google_cloud_platform__project\": \"oamk-476515\", \"extra__google_cloud_platform__scope\": \"https://www.googleapis.com/auth/cloud-platform\", \"extra__google_cloud_platform__num_retries\": 5}' &&
+      echo 'Connection created successfully - will use ADC via GOOGLE_APPLICATION_CREDENTIALS env var' &&
+      airflow connections get google_cloud_default"
+    networks:
+      - fmi-net
 
   airflow-webserver:
     image: apache/airflow:2.9.3
@@ -46,6 +52,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     environment:
@@ -59,6 +67,7 @@ services:
         confluent-kafka==2.8.0
         fmi-weather-client
       GOOGLE_CLOUD_PROJECT: oamk-476515
+      GOOGLE_APPLICATION_CREDENTIALS: /home/airflow/.config/gcloud/application_default_credentials.json
     volumes:
       - ./dags:/opt/airflow/dags
       - ../:/opt/airflow/repo
@@ -73,6 +82,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
     environment:
       AIRFLOW__WEBSERVER__SECRET_KEY: "moo-key"
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
@@ -84,6 +95,7 @@ services:
         confluent-kafka==2.8.0
         fmi-weather-client
       GOOGLE_CLOUD_PROJECT: oamk-476515
+      GOOGLE_APPLICATION_CREDENTIALS: /home/airflow/.config/gcloud/application_default_credentials.json
     volumes:
       - ./dags:/opt/airflow/dags
       - ../:/opt/airflow/repo

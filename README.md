@@ -36,9 +36,10 @@ Kafka (Redpanda) acts as a buffer between the external API and downstream system
 A Kafka consumer reads messages from the fmi_observations topic and batches them into a BigQuery raw table: raw.fmi_observations
 
 #### Key characteristics:
-* Data is loaded as-is
+* Data is loaded in batches of 100 rows
 * Offsets are committed only after successful BigQuery inserts
 * No deduplication or filtering happens at this stage
+* Consumer exits automatically after idle period
 
 This keeps the raw dataset auditable and easy to reprocess if needed.
 
@@ -62,28 +63,35 @@ A daily processed table:
 processed.fmi_observations_daily
 
 * Rebuilt idempotently for each run date
-* Adds data quality flags (missing values, outliers)
+* Adds data quality flags:
+  * `missing_temperature`, `missing_humidity` - flags NULL values
+  * `outlier_temperature` - flags temperature < -60°C or > 60°C
+  * `outlier_humidity` - flags humidity < 0% or > 100%
+* Contains: station_id, timestamp, temperature, humidity, pressure, wind_speed, ingested_at, and quality flags
 
 ### Long-term station tables
 
-For selected stations, daily data is appended into station-specific long-term tables:
-
-longterm.station_<station_id>
+For five selected stations, daily data is appended into station-specific long-term tables:
+* longterm.station_100971 (Helsinki Kaisaniemi)
+* longterm.station_101939 (Sodankylä Luosto)
+* longterm.station_101632 (Joensuu Linnunlahti)
+* longterm.station_101786 (Oulu Lentoasema)
+* longterm.station_101311 (Tampere Siilinkari)
 
 Each station has its own time-series table to simplify analysis and visualization.
+Tables are rebuilt idempotently per station per day.
 
 ## Orchestration with Airflow
 
 Apache Airflow orchestrates the pipeline steps but is not part of the data path.
 
-The DAG performs:
+The DAG (`fmi_weather_pipeline`) runs on a **@daily** schedule and performs:
+1. **run_producer** (BashOperator) - Kafka producer run (FMI → Kafka)
+2. **run_consumer_to_bigquery** (BashOperator) - Kafka consumer run (Kafka → BigQuery raw)
+3. **build_processed_daily** (BigQueryInsertJobOperator) - Daily processing in BigQuery
+4. **update_longterm_station_*** (5x BigQueryInsertJobOperator) - Long-term table updates per station (run in parallel)
 
-* Kafka producer run (FMI → Kafka)
-* Kafka consumer run (Kafka → BigQuery raw)
-* Daily processing in BigQuery
-* Long-term table updates per station
-
-The DAG is designed to be idempotent and demo-friendly.
+**Authentication:** Uses Application Default Credentials (ADC) mounted from the host system into Docker containers.
 
 ## Visualization
 

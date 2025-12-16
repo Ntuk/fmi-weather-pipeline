@@ -77,9 +77,6 @@ with DAG(
                   humidity,
                   pressure,
                   wind_speed,
-                  wind_direction,
-                  precipitation_1h,
-                  source,
                   ingested_at,
                   missing_temperature,
                   missing_humidity,
@@ -93,10 +90,7 @@ with DAG(
                   humidity,
                   pressure,
                   wind_speed,
-                  wind_direction,
-                  precipitation_1h,
-                  source,
-                  ingested_at,
+                  CURRENT_TIMESTAMP() AS ingested_at,
                   (temperature IS NULL) AS missing_temperature,
                   (humidity IS NULL) AS missing_humidity,
                   (temperature IS NOT NULL AND (temperature < -60 OR temperature > 60)) AS outlier_temperature,
@@ -135,8 +129,9 @@ with DAG(
                     DELETE FROM `{longterm_table}`
                     WHERE DATE(timestamp) = run_date;
 
-                    INSERT INTO `{longterm_table}`
-                    SELECT *
+                    -- Only columns that exist in longterm table
+                    INSERT INTO `{longterm_table}` (station_id, timestamp, temperature, humidity, ingested_at)
+                    SELECT station_id, timestamp, temperature, humidity, ingested_at
                     FROM `{PROCESSED_TABLE}`
                     WHERE DATE(timestamp) = run_date
                       AND station_id = sid;
