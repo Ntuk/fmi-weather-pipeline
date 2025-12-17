@@ -3,14 +3,12 @@ import math
 import yaml
 import os
 from datetime import datetime, timezone
-
 from confluent_kafka import Producer
 import fmi_weather_client as fmi
 
 
 CONFIG_PATH = "config/settings.yaml"
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-TOPIC = "fmi_observations"
 
 
 # Helpers
@@ -90,7 +88,7 @@ def main():
                 key = f"{record['station_id']}:{record['timestamp']}"
 
                 producer.produce(
-                    TOPIC,
+                    "fmi_observations",
                     key=key,
                     value=json.dumps(record, ensure_ascii=False),
                 )
@@ -102,7 +100,7 @@ def main():
                 continue
 
     producer.flush(10)
-    print(f"[OK] Produced {produced} records to Kafka topic '{TOPIC}'")
+    print(f"[OK] Produced {produced} records to Kafka topic 'fmi_observations'")
 
 
 if __name__ == "__main__":
